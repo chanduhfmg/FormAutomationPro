@@ -6,6 +6,8 @@ import { IoIosEye } from "react-icons/io";
 import { IoIosSend } from "react-icons/io";
 import { Modal } from '../components/Home/Modal';
 import NewFormModal from '../components/Home/NewFormModal';
+import PatientSignaturePad from '../components/Input/SignatureField';
+
 
 interface FormDataItem {
     id: string
@@ -91,6 +93,7 @@ const Home = () => {
         {/* modals  */}
         <Modal isOpen={newFormModalOpen} onClose={() => setNewFormModalOpen(false)}>
                 <NewFormModal newFormModalOpen={newFormModalOpen} setNewFormModalOpen={setNewFormModalOpen} />
+               
             </Modal>
 
             <Navbar newFormModalOpen={newFormModalOpen} setNewFormModalOpen={setNewFormModalOpen} />
@@ -99,7 +102,7 @@ const Home = () => {
 
             {forms.length !== 0 ? <div className='w-screen md:w-[80%] mx-auto mt-6'>
                 <SearchInput /><Table columns={columns} data={forms} className='mt-5 border-2 border-gray-300 p' /> </div> : <p className='text-center mt-10 text-gray-500'>No forms available.</p>}
-
+            
         </>
     )
 }
