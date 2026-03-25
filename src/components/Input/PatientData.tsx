@@ -8,4 +8,3 @@ export type PatientData={
     formData?: any
     setFormData: React.Dispatch<React.SetStateAction<any>>
 }
-

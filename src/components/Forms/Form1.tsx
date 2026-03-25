@@ -163,6 +163,7 @@ import React, { useState } from 'react'
 import HeaderImage from '../UI/HeaderImage'
 import FormContainer from '../UI/FormContainer'
 import type { PatientDataProps } from '../Input/PatientData'
+import {useSearchParams} from 'react-router'
 
 function HeaderTitles() {
     return <>
@@ -301,7 +302,7 @@ const [facility, setFacility] = useState(null)
                     placeholder="your.email@example.com" 
                     value={email}
                      onChange={(e) => setEmail(e.target.value)}
-                        onBlur={getDetails}
+                        
                       />
                 </div>
             </div>
