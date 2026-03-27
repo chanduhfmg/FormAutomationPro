@@ -176,7 +176,7 @@ function HeaderTitles() {
 }
 
 
-const Form1 = ({setPatientData,setFormData}:PatientDataProps) => {
+const Form1 = ({setPatientData}:any) => {
 const [email,setEmail]=useState('')
 const [facility, setFacility] = useState(null)
       const getDetails = async () => {
