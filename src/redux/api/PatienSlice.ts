@@ -12,8 +12,8 @@ export const patientApi = createApi({
             query:(patientId)=>`api/Patient/${patientId}`
         }) , 
             postPatientInfo:builder.mutation({
-            query:(data:FinalFormData)=>({
-                url:"api/Patient",
+            query:(data:any)=>({
+                url:"api/Patient/submit",
                 method:"POST",
                 body:data
             })

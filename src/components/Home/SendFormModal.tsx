@@ -38,6 +38,7 @@ const SendFormModal: React.FC<SendFormModalProps> = ({ isOpen, onClose, form, fa
       body: JSON.stringify({
         phone,formLink})})
     setStep('success')
+    
   }
 
   const handleClose = () => {
