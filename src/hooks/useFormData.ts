@@ -112,7 +112,7 @@ const useFormData = () => {
     const fetchFormData = async (patientId: string) => {
         try {
             setIsLoading(true)
-            const response = await fetch(`http://localhost:5238/api/Patient/${patientId}`)
+            const response = await fetch(`${import.meta.env.VITE_BASE_URL}/api/Patient/${patientId}`)
             if (!response.ok) {
                 throw new Error("Failed to fetch patient data")
             }
@@ -228,7 +228,23 @@ const useFormData = () => {
         }
         try {
             setIsLoading(true)
-            await postPatienForm(formData).unwrap()
+            const payload = {
+                patient: formData.newPatient,
+                patientDemographic: formData.patientDemographic,
+                patientEmployment: formData.patientEmployment,
+                patientPharmacy: formData.patientPharmacy,
+                patientInsurance: formData.insurance,
+                emergencyContact: formData.emergencyContact,
+                hipaaFamilyMembers: formData.hipaa,
+                patientOffice: null,
+                patientProvider: null,
+                intakePacket: null,
+                signedDocument: null,
+                unableToObtainSignature: null,
+                signedDocumentResponses: null,
+            }
+
+            await postPatienForm(payload).unwrap()
         } catch (err) {
             setError(err as Error)
         } finally {

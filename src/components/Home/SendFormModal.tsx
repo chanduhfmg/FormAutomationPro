@@ -23,6 +23,7 @@ const SendFormModal: React.FC<SendFormModalProps> = ({ isOpen, onClose, form, fa
   const handleSend = () => {
     if (!canSend) return
     setStep('success')
+    
   }
 
   const handleClose = () => {

@@ -58,7 +58,7 @@ const FacilityFolders: React.FC = () => {
 
       try {
 
-        const response = await fetch('http://localhost:5238/api/Admin')
+        const response = await fetch(`${import.meta.env.VITE_BASE_URL}/api/Admin`)
 
 
 

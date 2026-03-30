@@ -9,6 +9,8 @@ const HPVScreening = ({ patientData,formData,setFormData }: PatientData) => {
 
 const patient = patientData?.patient || {}
 
+
+  console.log(formData)
   const handleNameChange = (value: string) => {
     setFormData((prev: any) => ({ ...prev, name: value }));
   };
