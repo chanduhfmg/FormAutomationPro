@@ -7,6 +7,7 @@ export interface HipaaFamilyMemberDto {
   signedDocumentId: number;
   familyMemberName: string;
   relationship: string;
+  isRepresentative?: boolean; // Optional field to indicate if this family member is a representative
 }
 
 export type CreateHipaaFamilyMemberDto = Omit<HipaaFamilyMemberDto, "hipaaFamilyMemberId">;
@@ -17,4 +18,5 @@ export const defaultHipaaFamilyMember: CreateHipaaFamilyMemberDto = {
   signedDocumentId: 0,
   familyMemberName: "",
   relationship: "",
+  isRepresentative: false
 };

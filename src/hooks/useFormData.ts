@@ -1,487 +1,591 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import type { PatientDemographicDto } from "../DTOs/patienDetails";
-import type {
-    HipaaFamilyMemberDto,
-    PatientDto,
-    PatientProviderDto,
-} from "../DTOs";
-import type { InsurancePlanDto } from "../DTOs/insurance_plan";
-import type { EmergencyContactDto } from "../DTOs/emegrency";
-import type { PatientPharmacyDto } from "../DTOs/patientPharmacy";
-import {
-    useLazyGetSesionDetailsQuery,
-    usePostPatientInfoMutation,
-} from "../redux/api/PatienSlice";
-import type { PatientInsuranceDto } from "../DTOs/patienDetails";
-import type { IntakePacketDto } from "../DTOs/intake_packet";
-import type { PatientOfficeDto } from "../DTOs/officeDTO";
-import type {
-    SignedDocumentDto,
-    UnableToObtainSignatureDto,
-} from "../DTOs/document";
+import { useEffect, useMemo, useState } from "react"
+import type { PatientDemographicDto } from "../DTOs/patienDetails"
+import type { HipaaFamilyMemberDto, PatientDto, PatientProviderDto } from "../DTOs"
+import type { InsurancePlanDto } from "../DTOs/insurance_plan"
+import type { EmergencyContactDto } from "../DTOs/emegrency"
+import type { PatientPharmacyDto } from "../DTOs/patientPharmacy"
+import { usePostPatientInfoMutation, useUploadSignatureMutation } from "../redux/api/PatienSlice"
+import type { PatientInsuranceDto } from "../DTOs/patienDetails"
+import type { IntakePacketDto } from "../DTOs/intake_packet"
+import type { PatientOfficeDto } from "../DTOs/officeDTO"
+import type { SignedDocumentDto, UnableToObtainSignatureDto } from "../DTOs/document"
 
-// --- INTERFACES ---
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Combined form state — one object for all sections
+// ─────────────────────────────────────────────────────────────────────────────
 export interface FinalFormData {
-    newPatient: PatientDto;
-    patientDemographic: PatientDemographicDto;
-    patientEmployment: any;
-    hipaa: HipaaFamilyMemberDto[];
-    insurance: InsurancePlanDto;
-    intakePacket: IntakePacketDto;
-    patientOffice: PatientOfficeDto;
-    patientProvider: PatientProviderDto;
-    signedDocuments: SignedDocumentDto;
-    emergencyContact: EmergencyContactDto;
-    patientPharmacy: PatientPharmacyDto;
-    patientInsurance: PatientInsuranceDto;
-    radios: Record<string, "yes" | "no">;
-    unableToObtainSignature: UnableToObtainSignatureDto;
+    newPatient: PatientDto
+    patientDemographic: PatientDemographicDto
+    patientEmployment: any
+    hipaa: HipaaFamilyMemberDto[]
+    insurance: InsurancePlanDto
+    intakePacket: IntakePacketDto
+    patientOffice: PatientOfficeDto
+    patientProvider: PatientProviderDto
+    signedDocuments: SignedDocumentDto
+    emergencyContact: EmergencyContactDto
+    patientPharmacy: PatientPharmacyDto
+    patientInsurance: PatientInsuranceDto
+    radios: Record<string, "yes" | "no">
+    unableToObtainSignature: UnableToObtainSignatureDto
+    signature?: Blob | null | string
 }
 
-// --- CONSTANTS ---
+// ─────────────────────────────────────────────────────────────────────────────
+// Date helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-const INITIAL_FORM_DATA: FinalFormData = {
+/** Convert any date string to ISO for the API */
+const toApiDate = (date?: string | null): string | undefined => {
+    if (!date) return undefined
+    const d = new Date(date)
+    return isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+
+/** Strip time portion for <input type="date"> — returns "YYYY-MM-DD" or null */
+const toInputDate = (date?: string | null): string | null =>
+    date ? date.split("T")[0] : null
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Builds a field-name → section-key lookup map for convenient auto-routing
+// ─────────────────────────────────────────────────────────────────────────────
+const buildMap = (formData: FinalFormData): Record<string, keyof FinalFormData> => {
+    const map: Record<string, keyof FinalFormData> = {}
+    for (const key in formData) {
+        if (!Object.prototype.hasOwnProperty.call(formData, key)) continue
+        const section = formData[key as keyof FinalFormData]
+        if (section && typeof section === "object" && !Array.isArray(section)) {
+            for (const field in section as object) {
+                map[field] = key as keyof FinalFormData
+            }
+        }
+    }
+    return map
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Blank defaults — used for new patients
+// ─────────────────────────────────────────────────────────────────────────────
+const defaultFormData: FinalFormData = {
     newPatient: {
+        // Patient table columns from DB schema (Image 6)
         firstName: "",
         middleInitial: "",
         lastName: "",
+        dateOfBirth: null,
+        sex: "",
+        maritalStatus: "",
+        ssnLast4: "",
+        email: "",
+        phonePrimary: "",
+        phoneAlternate: "",
         addressLine1: "",
         addressLine2: "",
         city: "",
         state: "",
         zipCode: "",
-        phonePrimary: "",
-        phoneAlternate: "",
-        email: "",
-        dateOfBirth: "",
-        sex: "",
-        maritalStatus: "",
-        ssnLast4: "",
-        createdAt: "",
-        updatedAt: "",
-        date: "",
+        initials: "",
+        apt: "",
+        createdAt: null,
+        updatedAt: null,
+        date: ""
     },
     patientDemographic: {
+        // PatientDemographic columns (Image 7): PatientId(PK/FK), Language, Race, Ethnicity, UpdatedAt
         patientId: 0,
-        ethnicity: "",
         language: "",
         race: "",
-        updatedAt: "",
+        ethnicity: "",
+        updatedAt: null,
     },
-    patientEmployment: {},
-    hipaa: [
-        {
-            familyMemberName: "",
-            relationship: "",
-            hipaaFamilyMemberId: 0,
-            signedDocumentId: 0,
-        },
-    ],
+    patientEmployment: {
+        // PatientEmployment columns (Image 8): PatientEmploymentId(PK), PatientId(FK),
+        // EmployerName, Occupation, EmployerAddress, CreatedAt
+        employerName: "",
+        occupation: "",
+        employerAddress: "",
+    },
+    hipaa: [{
+        // HipaaFamilyMember columns (Image 1): HipaaFamilyMemberId(PK), SignedDocumentId(FK),
+        // FamilyMemberName, Relationship, isRepresentative — NO PatientId
+        hipaaFamilyMemberId: 0,
+        signedDocumentId: 0,
+        familyMemberName: "",
+        relationship: "",
+        isRepresentative: false,
+    }],
     insurance: {
+        // InsurancePlan columns (Image 3): InsurancePlanId(PK), PlanName, PayerName, Notes
         insurancePlanId: 0,
-        payerName: "",
         planName: "",
+        payerName: "",
         notes: "",
     },
     emergencyContact: {
+        // EmergencyContact columns (Image 2): EmergencyContactId(PK), PatientId(FK),
+        // ContactName, Relationship, Phone, IsPrimary, CreatedAt
+        emergencyContactId: 0,
+        patientId: 0,
         contactName: "",
         relationship: "",
         phone: "",
         isPrimary: 0,
-        patientId: 0,
-        emergencyContactId: 0,
     },
     patientPharmacy: {
+        // PatientPharmacy columns (Image 11): PatientPharmacyId(PK), PatientId(FK),
+        // PharmacyName, Location, Phone, IsPreferred, CreatedAt
+        patientPharmacyId: 0,
+        patientId: 0,
         pharmacyName: "",
         location: "",
         phone: "",
         isPreferred: true,
-        patientId: 0,
-        patientPharmacyId: 0,
     },
     patientInsurance: {
+        // PatientInsurance columns (Image 9): PatientInsuranceId(PK), PatientId(FK),
+        // InsurancePlanId(FK nullable), CoverageType, MemberId, GroupNumber,
+        // SubscriberName, SubscriberDOB, RelationshipToPatient, IsActive, CreatedAt
         patientId: 0,
         insurancePlanId: 0,
         coverageType: "",
         memberId: "",
         groupNumber: "",
         subscriberName: "",
-        subscriberDOB: "",
+        subscriberDOB: null,
         relationshipToPatient: "",
         isActive: true,
     },
-    radios: {},
     intakePacket: {
+        // IntakePacket columns (Image 4): IntakePacketId(PK), PatientId(FK), PacketDate,
+        // LocationName, CreatedAt, OfficeId(FK)
         intakePacketId: 0,
         patientId: 0,
         packetDate: "",
         locationName: "",
         officeId: 0,
-        createdAt: "",
+        createdAt: null,
     },
     patientOffice: {
-        active: true,
-        firstVisitDate: "",
-        isPrimary: true,
+        // PatientOffice columns (Image 10): PatientOfficeId(PK), PatientId(FK), OfficeId(FK),
+        // IsPrimary(TINYINT nullable), FirstVisitDate(DATE nullable), Active(TINYINT nullable)
         officeId: 0,
+        isPrimary: true,
+        firstVisitDate: "",
+        active: true,
     },
     patientProvider: {
+        // PatientProvider columns (Image 12): PatientProviderId(PK), PatientId(FK),
+        // ProviderName, ProviderType, Notes, CreatedAt
         patientProviderId: 0,
         patientId: 0,
         providerName: "",
         providerType: "",
         notes: "",
-        createdAt: "",
+        createdAt: null,
     },
     signedDocuments: {
+        // SignedDocument columns (Image 14): SignedDocumentId(PK), IntakePacketId(FK),
+        // DocumentTypeId(FK), SignedByName, SignedByRole, RepresentativeAuthority,
+        // SignedAt, SignatureCaptured(TINYINT), Notes, DocumentVersionId(FK nullable)
         signedDocumentId: 0,
         intakePacketId: 0,
         documentTypeId: 0,
         signedByName: "",
         signedByRole: "",
         RepresentativeAuthority: "",
-        signedAt: "",
+        signedAt: null,
         signatureCaptured: false,
         notes: "",
         documentVersionId: undefined,
     },
     unableToObtainSignature: {
+        // UnableToObtainSignature columns (Image 16): UnableId(PK), SignedDocumentId(FK),
+        // AttemptDate(DATE nullable), Reason, StaffInitials
         unableId: 0,
         signedDocumentId: 0,
-        attemptDate: "",
+        attemptDate: null,
         reason: "",
         staffInitials: "",
     },
-};
+    radios: {},
+    signature: null
+}
 
-// --- HELPER FUNCTIONS ---
-
-const cleanDate = (date: string) =>
-    date ? new Date(date).toISOString() : undefined;
-
-const toApiDate = (date?: string) => {
-    if (!date) return undefined;
-    const d = new Date(date);
-    return isNaN(d.getTime()) ? undefined : d.toISOString();
-};
-
-const toInputDate = (date: string) => (date ? date.split("T")[0] : "");
-
-const buildMap = (
-    formData: FinalFormData,
-): Record<string, keyof FinalFormData> => {
-    const map: Record<string, keyof FinalFormData> = {};
-    for (const key in formData) {
-        if (formData.hasOwnProperty(key)) {
-            for (const field in formData[key as keyof FinalFormData]) {
-                map[field] = key as keyof FinalFormData;
-            }
-        }
-    }
-    return map;
-};
-
-// --- MAIN HOOK ---
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook
+// ─────────────────────────────────────────────────────────────────────────────
 const useFormData = () => {
-    // --- STATE ---
-    const [formData, setFormData] = useState<FinalFormData | null>(
-        INITIAL_FORM_DATA,
-    );
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<Error | null>(null);
-    const [sessionDetails, setSessionDetails] = useState<any>(null);
 
-    // --- API HOOKS ---
-    const [postPatienForm] = usePostPatientInfoMutation();
-    const [getSession] = useLazyGetSesionDetailsQuery();
+    const [formData, setFormData] = useState<FinalFormData | null>(defaultFormData)
+    const [isLoading, setIsLoading] = useState(true)
+    const [error, setError] = useState<Error | null>(null)
 
-    // --- DERIVED STATE ---
-    const sectionMap = useMemo(() => {
-        return formData ? buildMap(formData) : {};
-    }, [formData]);
+    const [postPatienForm] = usePostPatientInfoMutation()
+    const [uploadSignature] = useUploadSignatureMutation()
 
-    // --- FUNCTIONS ---
-
-    /**
-     * Fetches current session details using the provided token.
-     */
-    const getSessionDetails = async (token: string) => {
+    // ─────────────────────────────────────────────────────────────────────────
+    // FETCH — loads existing patient from backend and maps to formData
+    // ─────────────────────────────────────────────────────────────────────────
+    const fetchFormData = async (patientId: string) => {
         try {
-            if (!token) {
-                setError(new Error("No token provided"));
-                return;
-            }
-            const data = await getSession(token).unwrap();
-            setSessionDetails(data);
-        } catch (error) {
-            setError(error as Error);
-        }
-        setIsLoading(false)
-    };
+            setIsLoading(true)
+            const response = await fetch(`${import.meta.env.VITE_BASE_URL}/api/Patient/${patientId}`)
+            if (!response.ok) throw new Error("Failed to fetch patient data")
 
-    /**
-     * Fetches patient form data from the backend and populates state.
-     * Triggers whenever sessionDetails contains a valid patientId.
-     */
-    const fetchFormData = useCallback(async () => {
-        if (!sessionDetails?.patientId) return;
+            const data = await response.json()
+            console.log("API response:", data)
 
-        try {
-            setIsLoading(true);
-            const response = await fetch(
-                `${import.meta.env.VITE_BASE_URL}/api/Patient/${sessionDetails.patientId}`,
-            );
-
-            if (!response.ok) {
-                throw new Error("Failed to fetch patient data");
-            }
-
-            const data = await response.json();
-            const radioMap: Record<string, "yes" | "no"> = {};
-
+            // Build radio map from SignedDocumentResponse table
+            // BoolValue is TINYINT in DB — could come back as 0/1 or true/false
+            const radioMap: Record<string, "yes" | "no"> = {}
             data?.signedDocumentResponse?.forEach((item: any) => {
-                radioMap[item.questionCode] = item.boolValue === 1 ? "yes" : "no";
-            });
+                radioMap[item.questionCode] =
+                    item.boolValue === true || item.boolValue === 1 ? "yes" : "no"
+            })
 
             setFormData({
+                // ── Patient (Image 6) ─────────────────────────────────────────
                 newPatient: {
-                    patientId: data?.patient?.patientId || 0,
+                    patientId: data?.patient?.patientId || undefined,
                     firstName: data?.patient?.firstName || "",
                     middleInitial: data?.patient?.middleInitial || "",
                     lastName: data?.patient?.lastName || "",
+                    dateOfBirth: toInputDate(data?.patient?.dateOfBirth),
+                    sex: data?.patient?.sex || "",
+                    maritalStatus: data?.patient?.maritalStatus || "",
+                    ssnLast4: data?.patient?.ssN_Last4 || "", // DB col = SSN_Last4
+                    email: data?.patient?.email || "",
+                    phonePrimary: data?.patient?.phonePrimary || "",
+                    phoneAlternate: data?.patient?.phoneAlternate || "",
                     addressLine1: data?.patient?.addressLine1 || "",
+                    addressLine2: data?.patient?.addressLine2 || "",
                     city: data?.patient?.city || "",
                     state: data?.patient?.state || "",
                     zipCode: data?.patient?.zipCode || "",
-                    ssnLast4: data?.patient?.ssN_Last4 || "",
-                    dateOfBirth: toInputDate(data?.patient?.dateOfBirth),
-                    maritalStatus: data?.patient?.maritalStatus || "",
-                    phonePrimary: data?.patient?.phonePrimary || "",
-                    phoneAlternate: data?.patient?.phoneAlternate || "",
-                    email: data?.patient?.email || "",
-                    addressLine2: data?.patient?.addressLine2 || "",
-                    createdAt: data?.patient?.createdAt || "",
-                    updatedAt: data?.patient?.updatedAt || "",
-                    sex: data?.patient?.sex || "",
+                    initials: data?.patient?.initials || "",
+                    apt: data?.patient?.apt || "",
+                    createdAt: data?.patient?.createdAt || null,
+                    updatedAt: data?.patient?.updatedAt || null,
+                    date: ""
                 },
+
+                // ── PatientDemographic (Image 7) ──────────────────────────────
+                // PK = PatientId (shared), columns: Language, Race, Ethnicity, UpdatedAt
                 patientDemographic: {
-                    patientId: data?.demographics?.patientId || 0,
-                    ethnicity: data?.demographics?.ethnicity || "",
+                    patientId: data?.demographics?.patientId || undefined,
                     language: data?.demographics?.language || "",
                     race: data?.demographics?.race || "",
-                    updatedAt: data?.demographics?.updatedAt || "",
+                    ethnicity: data?.demographics?.ethnicity || "",
+                    updatedAt: data?.demographics?.updatedAt || null,
                 },
+
+                // ── PatientEmployment (Image 8) ───────────────────────────────
+                // PK = PatientEmploymentId, FK = PatientId
                 patientEmployment: {
-                    employerAddress: data?.employer?.employerAddress || "",
                     employerName: data?.employer?.employerName || "",
                     occupation: data?.employer?.occupation || "",
-                    createdAt: data?.employer?.createdAt || "",
+                    employerAddress: data?.employer?.employerAddress || "",
+                    createdAt: data?.employer?.createdAt || null,
                 },
-                hipaa:
-                    data?.hippa?.map((item: any) => ({
-                        familyMemberName: item.familyMemberName || "",
-                        relationship: item.relationship || "",
+
+                // ── HipaaFamilyMember (Image 1) ───────────────────────────────
+                // PK = HipaaFamilyMemberId, FK = SignedDocumentId — NO PatientId
+                hipaa: data?.hipaa?.length
+                    ? data.hipaa.map((item: any) => ({
                         hipaaFamilyMemberId: item.hipaaFamilyMemberId || 0,
                         signedDocumentId: item.signedDocumentId || 0,
-                    })) || [],
+                        familyMemberName: item.familyMemberName || "",
+                        relationship: item.relationship || "",
+                        isRepresentative: item.isRepresentative ?? false,
+                    }))
+                    : defaultFormData.hipaa,
+
+                // ── InsurancePlan (Image 3) ───────────────────────────────────
+                // PK = InsurancePlanId, columns: PlanName, PayerName, Notes
                 insurance: {
-                    insurancePlanId: data?.insurance?.insurancePlanId || "",
-                    payerName: data?.insurance?.payerName || "",
+                    insurancePlanId: data?.insurance?.insurancePlanId || 0,
                     planName: data?.insurance?.planName || "",
+                    payerName: data?.insurance?.payerName || "",
                     notes: data?.insurance?.notes || "",
                 },
+
+                // ── EmergencyContact (Image 2) ────────────────────────────────
+                // PK = EmergencyContactId, FK = PatientId
                 emergencyContact: {
+                    emergencyContactId: data?.emergency?.emergencyContactId || undefined,
+                    patientId: data?.emergency?.patientId || 0,
                     contactName: data?.emergency?.contactName || "",
                     relationship: data?.emergency?.relationship || "",
                     phone: data?.emergency?.phone || "",
-                    isPrimary: data?.emergency?.isPrimary || 0,
-                    patientId: data?.emergency?.patientId || 0,
-                    emergencyContactId: data?.emergency?.emergencyContactId || 0,
+                    isPrimary: data?.emergency?.isPrimary ?? 0,
                 },
+
+                // ── PatientPharmacy (Image 11) ────────────────────────────────
+                // PK = PatientPharmacyId, FK = PatientId
                 patientPharmacy: {
+                    patientPharmacyId: data?.pharmacy?.patientPharmacyId || undefined,
+                    patientId: data?.pharmacy?.patientId || undefined,
                     pharmacyName: data?.pharmacy?.pharmacyName || "",
                     location: data?.pharmacy?.location || "",
                     phone: data?.pharmacy?.phone || "",
-                    isPreferred: data?.pharmacy?.isPreferred || true,
-                    patientId: data?.pharmacy?.patientId || 0,
-                    patientPharmacyId: data?.pharmacy?.patientPharmacyId || 0,
+                    isPreferred: data?.pharmacy?.isPreferred ?? true,
                 },
+
+                // ── PatientInsurance (Image 9) ────────────────────────────────
+                // PK = PatientInsuranceId, FK = PatientId + InsurancePlanId
                 patientInsurance: {
-                    patientId: data?.patientInsurance?.patientId || 0,
-                    insurancePlanId: data?.patientInsurance?.insurancePlanId || 0,
+                    patientId: data?.patientInsurance?.patientId || undefined,
+                    insurancePlanId: data?.patientInsurance?.insurancePlanId || undefined,
                     coverageType: data?.patientInsurance?.coverageType || "",
                     memberId: data?.patientInsurance?.memberId || "",
                     groupNumber: data?.patientInsurance?.groupNumber || "",
                     subscriberName: data?.patientInsurance?.subscriberName || "",
                     subscriberDOB: toInputDate(data?.patientInsurance?.subscriberDOB),
-                    relationshipToPatient:
-                        data?.patientInsurance?.relationshipToPatient || "",
+                    relationshipToPatient: data?.patientInsurance?.relationshipToPatient || "",
                     isActive: data?.patientInsurance?.isActive ?? true,
                 },
-                radios: radioMap,
+
+                // ── IntakePacket (Image 4) ────────────────────────────────────
+                // PK = IntakePacketId, FK = PatientId + OfficeId
                 intakePacket: {
-                    intakePacketId: data?.intakePacket?.intakePacketId || 0,
-                    patientId: data?.intakePacket?.patientId || 0,
+                    intakePacketId: data?.intakePacket?.intakePacketId || undefined,
+                    patientId: data?.intakePacket?.patientId || undefined,
                     packetDate: toInputDate(data?.intakePacket?.packetDate),
                     locationName: data?.intakePacket?.locationName || "",
-                    officeId: data?.intakePacket?.officeId || 0,
-                    createdAt: data?.intakePacket?.createdAt || "",
+                    officeId: data?.intakePacket?.officeId || undefined,
+                    createdAt: data?.intakePacket?.createdAt || null,
                 },
+
+                // ── PatientOffice (Image 10) ──────────────────────────────────
+                // PK = PatientOfficeId, FK = PatientId + OfficeId
+                // Key in API response is "patientOffice" (camelCase — fixed in backend)
                 patientOffice: {
-                    active: data?.patientOffice?.active ?? true,
-                    firstVisitDate: toInputDate(data?.patientOffice?.firstVisitDate),
+                    officeId: data?.patientOffice?.officeId || undefined,
                     isPrimary: data?.patientOffice?.isPrimary ?? true,
-                    officeId: data?.patientOffice?.officeId || 0,
+                    firstVisitDate: toInputDate(data?.patientOffice?.firstVisitDate),
+                    active: data?.patientOffice?.active ?? true,
                 },
+
+                // ── PatientProvider (Image 12) ────────────────────────────────
+                // PK = PatientProviderId, FK = PatientId
                 patientProvider: {
-                    patientProviderId: data?.patientProvider?.patientProviderId || 0,
-                    patientId: data?.patientProvider?.patientId || 0,
+                    patientProviderId: data?.patientProvider?.patientProviderId || undefined,
+                    patientId: data?.patientProvider?.patientId || undefined,
                     providerName: data?.patientProvider?.providerName || "",
                     providerType: data?.patientProvider?.providerType || "",
                     notes: data?.patientProvider?.notes || "",
-                    createdAt: data?.patientProvider?.createdAt || "",
+                    createdAt: data?.patientProvider?.createdAt || null,
                 },
+
+                // ── SignedDocument (Image 14) ─────────────────────────────────
+                // PK = SignedDocumentId, FK = IntakePacketId + DocumentTypeId
+                // Key in API response is "signedDocuments"
                 signedDocuments: {
-                    signedDocumentId: data?.signedDocument?.signedDocumentId || 0,
-                    intakePacketId: data?.signedDocument?.intakePacketId || 0,
-                    documentTypeId: data?.signedDocument?.documentTypeId || 0,
-                    signedByName: data?.signedDocument?.signedByName || "",
-                    signedByRole: data?.signedDocument?.signedByRole || "",
-                    RepresentativeAuthority: data?.signedDocument?.representative || "",
-                    signedAt: data?.signedDocument?.signedAt || "",
-                    signatureCaptured: data?.signedDocument?.signatureCaptured ?? false,
-                    notes: data?.signedDocument?.notes || "",
-                    documentVersionId: data?.signedDocument?.documentVersionId,
+                    signedDocumentId: data?.signedDocuments?.signedDocumentId || undefined,
+                    intakePacketId: data?.signedDocuments?.intakePacketId || undefined,
+                    documentTypeId: data?.signedDocuments?.documentTypeId || undefined,
+                    signedByName: data?.signedDocuments?.signedByName || "",
+                    signedByRole: data?.signedDocuments?.signedByRole || "",
+                    RepresentativeAuthority: data?.signedDocuments?.representativeAuthority || "",
+                    signedAt: data?.signedDocuments?.signedAt || null,
+                    signatureCaptured: data?.signedDocuments?.signatureCaptured ?? false,
+                    notes: data?.signedDocuments?.notes || "",
+                    documentVersionId: data?.signedDocuments?.documentVersionId,
                 },
+
+                // ── UnableToObtainSignature (Image 16) ────────────────────────
+                // PK = UnableId, FK = SignedDocumentId
+                // Key in API response is "unableToObtainSignature" (fixed in backend)
                 unableToObtainSignature: {
-                    unableId: data?.unableToObtainSignature?.unableId || 0,
-                    signedDocumentId:
-                        data?.unableToObtainSignature?.signedDocumentId || 0,
-                    attemptDate:
-                        data?.unableToObtainSignature?.attemptDate?.split("T")[0] || "",
+                    unableId: data?.unableToObtainSignature?.unableId || undefined,
+                    signedDocumentId: data?.unableToObtainSignature?.signedDocumentId || undefined,
+                    attemptDate: toInputDate(data?.unableToObtainSignature?.attemptDate),
                     reason: data?.unableToObtainSignature?.reason || "",
                     staffInitials: data?.unableToObtainSignature?.staffInitials || "",
                 },
-            });
-        } catch (err) {
-            setError(err as Error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [sessionDetails?.patientId]);
 
-    /**
-     * Submits the consolidated form data object safely to the backend.
-     */
+                radios: radioMap,
+
+                // ── PatientSignature (Image 13) ───────────────────────────────
+                // SignatureData is LONGBLOB — comes back as base64 or URL
+                signature: data?.signature?.signatureData || null
+            })
+        } catch (err) {
+            setError(err as Error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SUBMIT — builds API payload and posts to backend
+    // ─────────────────────────────────────────────────────────────────────────
     const submitFormData = async () => {
         if (!formData) {
-            setError(new Error("No form data to submit"));
-            return;
+            setError(new Error("No form data to submit"))
+            return
         }
 
-        const signedDocumentResponses = Object.entries(formData?.radios || {}).map(
+        // If patientId is missing/0 this is a new patient → backend does INSERT
+        const isNewPatient = !formData?.newPatient?.patientId
+
+        // Build SignedDocumentResponse rows from radio state
+        // BoolValue is TINYINT in DB — send as boolean (EF handles the conversion)
+        const signedDocumentResponses = Object.entries(formData.radios || {}).map(
             ([questionCode, value]) => ({
-                questionCode: questionCode,
-                boolValue: value === "yes",
+                questionCode,
+                boolValue: value === "yes",  // boolean → TINYINT via EF
                 responseType: "BOOLEAN",
                 textValue: null,
                 choiceValue: null,
-                signedDocumentId: formData?.signedDocuments?.signedDocumentId,
-            }),
-        );
+                signedDocumentId: formData.signedDocuments?.signedDocumentId || undefined
+            })
+        )
 
         try {
-            setIsLoading(true);
+            setIsLoading(true)
 
             const payload = {
-                Patient: formData.newPatient,
-                PatientDemographic: formData.patientDemographic,
+                Patient: {
+                    ...formData.newPatient,
+                    patientId: isNewPatient ? undefined : formData.newPatient.patientId
+                },
+                PatientDemographic: {
+                    ...formData.patientDemographic,
+                    patientId: isNewPatient ? undefined : formData.patientDemographic.patientId
+                },
+                PatientInsurance: {
+                    ...formData.patientInsurance,
+                    patientId: isNewPatient ? undefined : formData.patientInsurance.patientId,
+                    subscriberDOB: formData.patientInsurance.subscriberDOB
+                        ? formData.patientInsurance.subscriberDOB.split("T")[0]
+                        : null
+                },
                 PatientEmployment: formData.patientEmployment,
                 PatientPharmacy: formData.patientPharmacy,
-                PatientInsurance: formData.patientInsurance,
                 EmergencyContact: formData.emergencyContact,
-                HipaaFamilyMembers: formData.hipaa,
-                PatientOffice: formData.patientOffice.officeId
+
+                // Filter blank default HIPAA rows
+                HipaaFamilyMembers: formData.hipaa.filter(
+                    h => h.familyMemberName && h.familyMemberName.trim() !== ""
+                ),
+
+                // firstVisitDate must be YYYY-MM-DD (DATE column), not full ISO
+                PatientOffice: formData.patientOffice?.officeId && formData.patientOffice.officeId > 0
                     ? {
                         ...formData.patientOffice,
                         firstVisitDate: formData.patientOffice.firstVisitDate
-                            ? toApiDate(formData.patientOffice.firstVisitDate)
-                            : undefined,
+                            ? formData.patientOffice.firstVisitDate.split("T")[0]
+                            : null
                     }
                     : null,
+
                 PatientProvider: formData.patientProvider,
+
                 IntakePacket: {
                     ...formData.intakePacket,
+                    // FIX: null out officeId=0 so FK constraint is not violated for new patients
+                    officeId: formData.intakePacket.officeId && formData.intakePacket.officeId > 0
+                        ? formData.intakePacket.officeId
+                        : null,
+                    // FIX: DATE column — YYYY-MM-DD only, fallback to today
                     packetDate:
                         formData.intakePacket.packetDate &&
                             formData.intakePacket.packetDate !== "0001-01-01"
-                            ? toApiDate(formData.intakePacket.packetDate)
-                            : undefined,
+                            ? formData.intakePacket.packetDate.split("T")[0]
+                            : new Date().toISOString().split("T")[0]
                 },
+
                 SignedDocument: {
                     ...formData.signedDocuments,
-                    documentTypeId: formData?.signedDocuments?.documentTypeId || 1,
-                    intakePacketId: formData?.intakePacket?.intakePacketId || 1,
-                    signedByName: formData?.signedDocuments?.signedByName?.trim() || "",
-                    signedByRole: formData?.signedDocuments?.signedByRole?.trim() || "",
-                    signedAt: formData?.signedDocuments?.signedAt
-                        ? toApiDate(formData?.signedDocuments?.signedAt)
-                        : new Date().toISOString(),
-                    signatureCaptured:
-                        formData?.signedDocuments?.signatureCaptured ?? false,
-                    notes: formData?.signedDocuments?.notes || "",
+                    intakePacketId: formData.intakePacket?.intakePacketId || undefined,
+                    documentTypeId: formData.signedDocuments?.documentTypeId || 1,
                 },
-                UnableToObtainSignature: formData?.unableToObtainSignature?.attemptDate
+
+                UnableToObtainSignature: formData.unableToObtainSignature?.attemptDate
                     ? {
-                        ...formData?.unableToObtainSignature,
-                        attemptDate: toApiDate(
-                            formData?.unableToObtainSignature?.attemptDate,
-                        ),
+                        ...formData.unableToObtainSignature,
+                        // DATE column — YYYY-MM-DD only
+                        attemptDate: formData.unableToObtainSignature.attemptDate.split("T")[0]
                     }
                     : null,
-                SignedDocumentResponses: signedDocumentResponses,
-            };
 
-            await postPatienForm(payload).unwrap();
+                SignedDocumentResponses: signedDocumentResponses
+            }
+
+            console.log("FINAL PAYLOAD:", JSON.stringify(payload, null, 2))
+
+            const res = await postPatienForm(payload).unwrap()
+            const returnedPatientId = res?.patientId
+
+            // After successful INSERT, store the new patientId in state so the
+            // next save is treated as an UPDATE
+            if (isNewPatient && returnedPatientId) {
+                setFormData(prev => ({
+                    ...prev!,
+                    newPatient: {
+                        ...prev!.newPatient,
+                        patientId: returnedPatientId
+                    }
+                }))
+            }
+
+            // Upload signature blob if present
+            if (formData.signature && returnedPatientId) {
+                await uploadSignature({
+                    patientId: returnedPatientId,
+                    file: formData.signature
+                }).unwrap()
+            }
+
+            console.log("Submit response:", res)
         } catch (err) {
-            setError(err as Error);
+            setError(err as Error)
         } finally {
-            setIsLoading(false);
+            setIsLoading(false)
         }
-    };
+    }
 
-    /**
-     * Generalized input handler for standard form events and checkboxes.
-     */
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value, type, checked } = e.target;
+    // ─────────────────────────────────────────────────────────────────────────
+    // Generic input handler — works for any section
+    // ─────────────────────────────────────────────────────────────────────────
+    const handleInput = (
+        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+        section: keyof FinalFormData
+    ) => {
+        const { name, value } = e.target
+        const checked = (e.target as HTMLInputElement).checked
+        const type = (e.target as HTMLInputElement).type
+
         setFormData((prev: any) => ({
             ...prev,
-            [sectionMap[name]]: {
-                ...prev[sectionMap[name]],
-                [name]: type === "checkbox" ? checked : value,
-            },
-        }));
-    };
+            [section]: {
+                ...prev[section],
+                [name]: type === "checkbox" ? checked : value
+            }
+        }))
+    }
 
-    // --- EFFECTS ---
+    // ─────────────────────────────────────────────────────────────────────────
+    // Section map — maps individual field names back to their parent section
+    // ─────────────────────────────────────────────────────────────────────────
+    const sectionMap = useMemo(() => {
+        return formData ? buildMap(formData) : {}
+    }, [formData])
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // On mount: read patientId from URL and load existing patient if present
+    // ─────────────────────────────────────────────────────────────────────────
     useEffect(() => {
-        const token = new URLSearchParams(window.location.search).get("token");
-        if (token) {
-            getSessionDetails(token);
+        const patientId = new URLSearchParams(window.location.search).get("patientId")
+        console.log("Patient ID from URL:", patientId)
+
+        if (patientId) {
+            fetchFormData(patientId) // existing patient → fetch and populate
         } else {
-            setIsLoading(false);
+            setIsLoading(false)      // new patient → show blank form immediately
         }
-    }, []);
-
-    useEffect(() => {
-        if (sessionDetails?.patientId) {
-            fetchFormData();
-        }
-    }, [fetchFormData, sessionDetails?.patientId]);
+    }, [])
 
     return {
         formData,
@@ -492,8 +596,8 @@ const useFormData = () => {
         setError,
         sectionMap,
         submitFormData,
-        handleInput,
-    };
-};
+        handleInput
+    }
+}
 
-export default useFormData;
+export default useFormData
