@@ -9,6 +9,7 @@ import type { PatientInsuranceDto } from "../DTOs/patienDetails"
 import type { IntakePacketDto } from "../DTOs/intake_packet"
 import type { PatientOfficeDto } from "../DTOs/officeDTO"
 import type { SignedDocumentDto, UnableToObtainSignatureDto } from "../DTOs/document"
+import toast from "react-hot-toast"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Combined form state — one object for all sections
@@ -448,9 +449,9 @@ const useFormData = () => {
 
         try {
             setIsLoading(true)
-
+            console.log("Submitting form data:", sessionId)
             const payload = {
-                sessionId,
+                SessionId: sessionId,
                 Patient: {
                     ...formData.newPatient,
                     patientId: isNewPatient ? undefined : formData.newPatient.patientId
@@ -544,6 +545,7 @@ const useFormData = () => {
             }
 
             console.log("Submit response:", res)
+            toast.success("Form submitted successfully!")
         } catch (err) {
             setError(err as Error)
         } finally {
@@ -637,7 +639,7 @@ const useFormData = () => {
         const sessionIdParams = new URLSearchParams(window.location.search).get("token")
         console.log("Session ID from URL:", sessionIdParams)
         if (sessionIdParams) {
-        
+            setSessionId(sessionIdParams)
             getSessionDetails(sessionIdParams)
                 .unwrap()
                 .then((sessionData) => {

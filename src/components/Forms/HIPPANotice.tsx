@@ -61,24 +61,63 @@ const HIPAANotice = ({ formData, setFormData, handleInput }: any) => {
 
 
   // ── Reusable Yes/No radio pair — untouched ────────────────────────────────
-  const RadioPair = ({ field }: { field: string }) => (
-    <div className="flex gap-2 shrink-0">
-      <input
-        type="radio"
-        name={field}
-        checked={formData?.radios?.[field] === "yes"}
-        onChange={() => handleRadioChange(field, "yes")}
-        className="appearance-none w-4 h-4 border border-black cursor-pointer checked:bg-blue-500"
-      />
-      <input
-        type="radio"
-        name={field}
-        checked={formData?.radios?.[field] === "no"}
-        onChange={() => handleRadioChange(field, "no")}
-        className="appearance-none w-4 h-4 border border-black cursor-pointer checked:bg-blue-500"
-      />
-    </div>
-  );
+  const RadioPair = ({ field }: { field: string }) => {
+
+    const value = formData?.radios?.[field];
+
+
+
+    return (
+
+      <div className="flex gap-2 shrink-0">
+
+        {/* YES */}
+
+        <div
+
+          onClick={() => handleRadioChange(field, "yes")}
+
+          className="w-4 h-4 border border-black cursor-pointer flex items-center justify-center"
+
+          style={{ minWidth: "1rem" }}
+
+        >
+
+          {value === "yes" && (
+
+            <span style={{ fontSize: "12px", lineHeight: 1, fontWeight: "bold", color: "#f50909" }}>✓</span>
+
+          )}
+
+        </div>
+
+
+
+        {/* NO */}
+
+        <div
+
+          onClick={() => handleRadioChange(field, "no")}
+
+          className="w-4 h-4 border border-black cursor-pointer flex items-center justify-center"
+
+          style={{ minWidth: "1rem" }}
+
+        >
+
+          {value === "no" && (
+
+            <span style={{ fontSize: "12px", lineHeight: 1, fontWeight: "bold", color: "#f50909" }}>✓</span>
+
+          )}
+
+        </div>
+
+      </div>
+
+    );
+
+  };
 
   return (
     <FormContainer>
@@ -143,7 +182,7 @@ const HIPAANotice = ({ formData, setFormData, handleInput }: any) => {
 
             {/* 3 rows — separate inputs */}
             <div className="space-y-2">
-              {[0 , 1, 2].map((item: any) => (
+              {[0, 1, 2].map((item: any) => (
                 <div key={item.hipaaFamilyMemberId} className="flex gap-3">
                   <LineInput
                     name="familyMemberName"
@@ -190,7 +229,7 @@ const HIPAANotice = ({ formData, setFormData, handleInput }: any) => {
           {/* Signature */}
           <div className="flex gap-4 items-start">
             <label className="shrink-0 pt-1">Signature:</label>
-         <SignatureField className="flex-1"   value={formData?.signature} onChange={(blob) => setFormData((prev: any) => ({ ...prev, signature: blob }))} />
+            <SignatureField className="flex-1" value={formData?.signature} onChange={(blob) => setFormData((prev: any) => ({ ...prev, signature: blob }))} />
           </div>
         </div>
 

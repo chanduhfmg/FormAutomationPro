@@ -102,7 +102,7 @@ const SendFormModal: React.FC<SendFormModalProps> = ({
           <label className="text-sm text-gray-600 mb-1 block">
             Form Link
           </label>
-
+{/* 
           <div className="flex items-center gap-2 border rounded-lg px-3 py-2 bg-gray-50">
             <input
               value={formLink}
@@ -116,7 +116,7 @@ const SendFormModal: React.FC<SendFormModalProps> = ({
             >
               <IoCopyOutline size={18} />
             </button>
-          </div>
+          </div> */}
         </div>
 
         {/* Footer */}
