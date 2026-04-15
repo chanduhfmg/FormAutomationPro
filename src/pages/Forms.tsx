@@ -71,7 +71,7 @@ const Forms = () => {
 
       </div>
 
-      <button className='px-4 py-2 bg-black text-white rounded-xl' onClick={() => submitFormData()}>Log Form Data</button>
+      <button className='px-4 py-2 bg-black text-white rounded-xl' onClick={() => submitFormData()}>Submit forms</button>
 
     </div>
   )

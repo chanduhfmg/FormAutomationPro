@@ -38,6 +38,7 @@ function App() {
           </Route>
 
           <Route path='/forms' element={<Forms />} />
+          <Route path='/allforms' element={<Home />} />
           <Route path='/forms/:formIds' element={<RenderForm />} />
         </Routes>
       </AppDataProvider>
